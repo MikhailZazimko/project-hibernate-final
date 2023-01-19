@@ -15,7 +15,9 @@ import io.lettuce.core.RedisURI;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.sync.RedisStringCommands;
 import lombok.Getter;
+import org.hibernate.Session;
 import org.hibernate.SessionFactory;
+import org.hibernate.Transaction;
 import org.hibernate.cfg.Configuration;
 import org.hibernate.cfg.Environment;
 
@@ -25,6 +27,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static java.util.Objects.nonNull;
+
 @Getter
 public class DataBaseController {
     private final SessionFactory sessionFactory;
@@ -60,13 +63,29 @@ public class DataBaseController {
         redisClient = prepareRedisClient();
         mapper = new ObjectMapper();
     }
-
+    @SuppressWarnings(value = "all")
     private RedisClient prepareRedisClient() {
         RedisClient redisClient = RedisClient.create(RedisURI.create("192.168.99.100", 6379));
         try (StatefulRedisConnection<String, String> connection = redisClient.connect()) {
             System.out.println("\nConnected to Redis\n");
         }
         return redisClient;
+    }
+
+    public void testRedisData(List<Integer> ids) {
+        try (StatefulRedisConnection<String, String> connection = redisClient.connect()) {
+            RedisStringCommands<String, String> sync = connection.sync();
+            for (Integer id : ids) {
+                String value = sync.get(String.valueOf(id));
+                try {
+                    mapper.readValue(value, CityCountry.class);
+                } catch (JsonProcessingException e) {
+                    e.printStackTrace();
+
+                }
+            }
+        }
+
     }
 
     public void shutdown() {
@@ -109,15 +128,26 @@ public class DataBaseController {
     }
 
     public void pushToRedis(List<CityCountry> preparedData) {
-        try(StatefulRedisConnection<String, String> connection = redisClient.connect()){
+        try (StatefulRedisConnection<String, String> connection = redisClient.connect()) {
             RedisStringCommands<String, String> sync = connection.sync();
             for (CityCountry country : preparedData) {
-                try{
-                    sync.set(String.valueOf(country.getId()),mapper.writeValueAsString(country));
+                try {
+                    sync.set(String.valueOf(country.getId()), mapper.writeValueAsString(country));
                 } catch (JsonProcessingException e) {
                     e.printStackTrace();
                 }
             }
+        }
+    }
+    @SuppressWarnings(value = "all")
+    public void testMysqlData(List<Integer> ids) {
+        try (Session currentSession = sessionFactory.getCurrentSession()){
+            Transaction transaction = currentSession.beginTransaction();
+            for (Integer id : ids) {
+                City cityDAOById = (City) cityDAO.getById(id);
+                Set<CountryLanguage> languages = cityDAOById.getCountry().getLanguages();
+            }
+            transaction.commit();
         }
     }
 }
